@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Saffron — Recipe Universe</title>
+<title>Cooknest — Recipe Universe</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <style>
 :root{
@@ -50,7 +50,7 @@ body{font-family:'Outfit',sans-serif;background:var(--paper);color:var(--ink);ov
 .av:hover{transform:scale(1.08);}
 
 /* ── HERO ── */
-#land{height:100vh;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+#land{height:100vh;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;will-change:transform;}
 .h-bg{position:absolute;inset:0;background:#0d0a07;}
 .h-img{position:absolute;inset:0;background:url('https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1600&q=80')center/cover;opacity:.28;mix-blend-mode:luminosity;}
 .h-ov{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(13,10,7,.3) 0%,rgba(13,10,7,.6) 55%,rgba(13,10,7,.98) 100%);}
@@ -391,21 +391,32 @@ body{font-family:'Outfit',sans-serif;background:var(--paper);color:var(--ink);ov
   .trans-orig{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.45);font-size:.75rem;cursor:pointer;font-family:'Outfit',sans-serif;padding:.4rem .85rem;border-radius:30px;transition:all .25s;}
   .trans-orig:hover{background:rgba(255,255,255,.12);color:white;}
   .trans-badge{background:linear-gradient(135deg,var(--gold),var(--gold2));color:white;font-size:.68rem;padding:.18rem .65rem;border-radius:20px;font-weight:600;letter-spacing:.03em;box-shadow:0 2px 8px rgba(200,146,42,.3);}
+
+  /* ── GOOGLE BUTTON ── */
+  .btn-google{width:100%;display:flex;align-items:center;justify-content:center;gap:.65rem;
+    padding:.7rem 1rem;border:1.5px solid var(--border);border-radius:12px;background:white;
+    font-family:'Outfit',sans-serif;font-size:.88rem;font-weight:500;color:var(--ink);
+    cursor:pointer;transition:all .25s;margin-bottom:.9rem;}
+  .btn-google:hover{background:#f8f8f8;border-color:#ccc;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+  .btn-google img{width:18px;height:18px;}
+  .or-divider{display:flex;align-items:center;gap:.75rem;margin-bottom:.9rem;color:var(--muted);font-size:.75rem;}
+  .or-divider::before,.or-divider::after{content:'';flex:1;height:1px;background:var(--border);}
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
 <!-- SPLASH -->
 <div id="spl">
   <div class="spl-bg"></div>
-  <div class="spl-title"><em>S</em>affron</div>
+  <div class="spl-title"><em>C</em>ooknest</div>
   <div class="spl-hr"></div>
   <div class="spl-sub">A Universe of Flavour</div>
 </div>
 
 <!-- GLOBAL NAV -->
 <nav id="nav">
-  <div class="logo" id="logo" onclick="backH()"><em>S</em>affron</div>
+  <div class="logo" id="logo" onclick="backH()"><em>C</em>ooknest</div>
   <div class="nav-r">
     <button class="nlink" onclick="goApp('recipes')">Explore</button>
     <button class="nlink" onclick="goApp('today')">Today</button>
@@ -495,15 +506,6 @@ body{font-family:'Outfit',sans-serif;background:var(--paper);color:var(--ink);ov
       </div>
     </div>
     <div class="wrap">
-      <div class="abox">
-        <h3>What can I cook right now?</h3>
-        <p>Tell us what's in your kitchen — we'll find recipes missing just 1, 2 or 3 ingredients</p>
-        <div class="arow">
-          <input id="ai" placeholder="onion, garlic, tomato, butter..."/>
-          <select id="am"><option value="1">Missing 1</option><option value="2">Missing up to 2</option><option value="3">Missing up to 3</option></select>
-          <button class="bg" onclick="doAlmost()">Find Recipes</button>
-        </div>
-      </div>
       <div class="sh"><h2 id="glbl">All Recipes</h2><small id="gcnt"></small></div>
       <div class="grid" id="grid"><div class="sp"><div class="spn"></div>Loading...</div></div>
     </div>
@@ -620,7 +622,7 @@ body{font-family:'Outfit',sans-serif;background:var(--paper);color:var(--ink);ov
 <div id="amov" style="display:none" class="mov" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal amod">
     <button class="mcl" style="background:var(--warm);color:var(--ink);position:absolute;top:1rem;right:1rem;" onclick="document.getElementById('amov').style.display='none'">×</button>
-    <div class="ahd"><h2 id="atitle">Welcome back</h2><p id="asub">Sign in to your Saffron account</p></div>
+    <div class="ahd"><h2 id="atitle">Welcome back</h2><p id="asub">Sign in to your Cooknest account</p></div>
     <div class="abd">
       <div class="atrow">
         <button class="at on" id="atl" onclick="sAuth('login')">Sign In</button>
@@ -628,12 +630,22 @@ body{font-family:'Outfit',sans-serif;background:var(--paper);color:var(--ink);ov
       </div>
       <div class="aerr" id="aerr"></div>
       <div id="lf">
+        <button class="btn-google" onclick="googleSignIn()">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G"/>
+          Continue with Google
+        </button>
+        <div class="or-divider">or</div>
         <div class="ff"><label>Email or Phone</label><input id="lid" placeholder="your@email.com or +91..."/></div>
         <div class="ff"><label>Password</label><input id="lpw" type="password" placeholder="Your password"/></div>
         <button class="bfull" style="margin-top:.5rem" onclick="doLogin()">Sign In</button>
         <div class="asw">No account? <a onclick="sAuth('register')">Join free</a></div>
       </div>
       <div id="rf" style="display:none">
+        <button class="btn-google" onclick="googleSignIn()">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G"/>
+          Sign up with Google
+        </button>
+        <div class="or-divider">or</div>
         <div class="ff"><label>Username</label><input id="rname" placeholder="ChefAnanya"/></div>
         <div class="ff"><label>Email</label><input id="remail" type="email" placeholder="your@email.com"/></div>
         <div class="ff"><label>Phone (optional)</label><input id="rphone" type="tel" placeholder="+91 9876543210"/></div>
@@ -650,7 +662,7 @@ const API='http://localhost:5000/api';
 let U=null;
 // Restore session from localStorage
 try {
-  const saved = localStorage.getItem('saffron_user');
+  const saved = localStorage.getItem('Cooknest_user');
   if (saved) U = JSON.parse(saved);
 } catch(e) {}
 
@@ -729,6 +741,50 @@ window.addEventListener('load',()=>{
     nav.classList.toggle('solid',solid);
     document.getElementById('nd').style.background=solid?'rgba(0,0,0,.12)':'rgba(255,255,255,.2)';
   });
+
+  // Smooth scroll animation on hero page — slides hero up then shows explore
+  let _scrolling = false;
+  document.getElementById('land').addEventListener('wheel', (e) => {
+    if (e.deltaY > 0 && !_scrolling) {
+      e.preventDefault();
+      _scrolling = true;
+      const land = document.getElementById('land');
+      land.style.transition = 'transform 0.7s cubic-bezier(0.4,0,0.2,1), opacity 0.7s ease';
+      land.style.transform = 'translateY(-100%)';
+      land.style.opacity = '0';
+      setTimeout(() => {
+        goApp('recipes');
+        // Reset for when user comes back
+        land.style.transition = 'none';
+        land.style.transform = 'translateY(0)';
+        land.style.opacity = '1';
+        setTimeout(() => { _scrolling = false; }, 300);
+      }, 680);
+    }
+  }, { passive: false });
+
+  // Touch swipe up on mobile
+  let _touchY = 0;
+  document.getElementById('land').addEventListener('touchstart', (e) => {
+    _touchY = e.touches[0].clientY;
+  }, { passive: true });
+  document.getElementById('land').addEventListener('touchend', (e) => {
+    const diff = _touchY - e.changedTouches[0].clientY;
+    if (diff > 60 && !_scrolling) {
+      _scrolling = true;
+      const land = document.getElementById('land');
+      land.style.transition = 'transform 0.7s cubic-bezier(0.4,0,0.2,1), opacity 0.7s ease';
+      land.style.transform = 'translateY(-100%)';
+      land.style.opacity = '0';
+      setTimeout(() => {
+        goApp('recipes');
+        land.style.transition = 'none';
+        land.style.transform = 'translateY(0)';
+        land.style.opacity = '1';
+        setTimeout(() => { _scrolling = false; }, 300);
+      }, 680);
+    }
+  }, { passive: true });
 });
 
 /* ── NAVIGATION ─────────────────────────────────────────────────────────── */
@@ -777,7 +833,7 @@ function updateAuth(){
 }
 function doLogout(){
   U=null;
-  localStorage.removeItem('saffron_user');
+  localStorage.removeItem('Cooknest_user');
   window._bms = new Set();
   window._recipesLoaded = false;
   updateAuth();
@@ -788,7 +844,7 @@ function openAuth(m){ document.getElementById('amov').style.display='flex'; sAut
 function sAuth(m){
   const il=m==='login';
   document.getElementById('atitle').textContent=il?'Welcome back':'Create account';
-  document.getElementById('asub').textContent=il?'Sign in to your Saffron account':'Join thousands of home chefs';
+  document.getElementById('asub').textContent=il?'Sign in to your Cooknest account':'Join thousands of home chefs';
   document.getElementById('lf').style.display=il?'':'none';
   document.getElementById('rf').style.display=il?'none':'';
   document.getElementById('atl').classList.toggle('on',il);
@@ -806,8 +862,8 @@ async function doLogin(){
     if(!d.success){authErr(d.message);return;}
     U=d.user;
     // Save last sign-in to localStorage
-    localStorage.setItem('saffron_user', JSON.stringify(U));
-    localStorage.setItem('saffron_last_login', new Date().toISOString());
+    localStorage.setItem('Cooknest_user', JSON.stringify(U));
+    localStorage.setItem('Cooknest_last_login', new Date().toISOString());
     document.getElementById('amov').style.display='none'; updateAuth();
     toast(`Welcome back, ${U.username}! 👋`,'tok');
   }catch(e){authErr('Connection error. Is server running?');}
@@ -823,8 +879,8 @@ async function doRegister(){
     const d=await r.json();
     if(!d.success){authErr(d.message);return;}
     U=d.user;
-    localStorage.setItem('saffron_user', JSON.stringify(U));
-    localStorage.setItem('saffron_last_login', new Date().toISOString());
+    localStorage.setItem('Cooknest_user', JSON.stringify(U));
+    localStorage.setItem('Cooknest_last_login', new Date().toISOString());
     document.getElementById('amov').style.display='none'; updateAuth();
     toast(`Welcome, ${name}! 🎉`,'tok');
   }catch(e){authErr('Connection error.');}
@@ -840,7 +896,7 @@ async function loadProfile(){
     const r=await fetch(`${API}/users/${U.user_id}/profile`);
     const d=await r.json(); if(!d.success) throw new Error();
     const{user,recipes,stats}=d.data;
-    const lastLogin = localStorage.getItem('saffron_last_login');
+    const lastLogin = localStorage.getItem('Cooknest_last_login');
     const lastLoginStr = lastLogin
       ? new Date(lastLogin).toLocaleString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
       : 'This session';
@@ -1162,6 +1218,91 @@ function restoreOriginal(recipeId) {
   if (titleEl && _origTitle) titleEl.textContent = _origTitle;
   document.getElementById('trans-badge-'+recipeId).style.display = 'none';
   document.getElementById('trans-lang-'+recipeId).value = 'en';
+}
+
+
+/* ── GOOGLE SIGN IN ── */
+window.onGoogleLibraryLoad = () => {
+  google.accounts.id.initialize({
+    client_id: '213908533346-h370f06974guljvshqjh33d3cnqt8jig.apps.googleusercontent.com',
+    callback: handleGoogleCredential,
+    auto_select: false,
+  });
+};
+
+async function googleSignIn() {
+  google.accounts.id.prompt((notification) => {
+    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+      // Fallback — render button in a popup div
+      const div = document.createElement('div');
+      div.id = 'g_signin_popup';
+      div.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:white;padding:2rem;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3)';
+      div.innerHTML = '<p style="margin-bottom:1rem;font-family:Outfit,sans-serif;font-size:.9rem;color:#333">Sign in with Google</p><div id="g_btn"></div><button onclick="this.parentElement.remove()" style="margin-top:1rem;width:100%;padding:.5rem;border:1px solid #ddd;border-radius:8px;background:none;cursor:pointer;font-family:Outfit,sans-serif">Cancel</button>';
+      document.body.appendChild(div);
+      google.accounts.id.renderButton(document.getElementById('g_btn'), {
+        theme: 'outline', size: 'large', width: 280
+      });
+    }
+  });
+}
+
+async function handleGoogleCredential(response) {
+  try {
+    // Decode JWT token from Google
+    const payload = JSON.parse(atob(response.credential.split('.')[1]));
+    const { email, name, sub: googleId, picture } = payload;
+
+    // Try login first, if fails register
+    let res = await fetch(`${API}/users/login`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ identifier: email, password: 'google_' + googleId })
+    });
+    let d = await res.json();
+
+    if (!d.success) {
+      // Auto register with Google
+      // Clean username — remove special chars, replace spaces with underscore
+      const cleanName = (name.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').toLowerCase() || 'user') + '_' + googleId.slice(-4);
+      res = await fetch(`${API}/users/register`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          username: cleanName,
+          email: email,
+          phone: null,
+          password: 'google_' + googleId
+        })
+      });
+      d = await res.json();
+      if (!d.success && d.message.includes('already registered')) {
+        // Email exists, try login again
+        res = await fetch(`${API}/users/login`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ identifier: email, password: 'google_' + googleId })
+        });
+        d = await res.json();
+      }
+    }
+
+    if (d.success && d.user) {
+      U = d.user;
+      localStorage.setItem('Cooknest_user', JSON.stringify(U));
+      localStorage.setItem('Cooknest_last_login', new Date().toISOString());
+      document.getElementById('amov').style.display = 'none';
+      // Remove popup if exists
+      const popup = document.getElementById('g_signin_popup');
+      if (popup) popup.remove();
+      updateAuth();
+      toast(`Welcome, ${U.username}! 🎉`, 'tok');
+    } else {
+      toast('Google sign in failed. Try again.', 'terr');
+    }
+  } catch(e) {
+    console.error(e);
+    toast('Google sign in error', 'terr');
+  }
 }
 
 function toast(m,cls='tok'){const t=document.createElement('div');t.className=`toast ${cls}`;t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3100);}
