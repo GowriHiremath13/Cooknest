@@ -1170,56 +1170,114 @@ async function loadAdmin(){
 /* ── TOAST ───────────────────────────────────────────────────────────────── */
 
 /* ── TRANSLATION ─────────────────────────────────────────────────────────── */
-let _origInst = '', _origTitle = '';
+const originalRecipeText = new Map();
+
 
 async function translateRecipe(recipeId) {
-  const lang = document.getElementById('trans-lang-'+recipeId).value;
-  const langName = document.getElementById('trans-lang-'+recipeId).options[document.getElementById('trans-lang-'+recipeId).selectedIndex].text;
-  const btn = document.getElementById('trans-btn-'+recipeId);
-  const instEl = document.getElementById('inst-text-'+recipeId);
-  const titleEl = document.getElementById('modal-title-'+recipeId);
-  if (!instEl) return;
+  const id = String(recipeId);
+  const langSelect = document.getElementById('trans-lang-' + recipeId);
+  const btn = document.getElementById('trans-btn-' + recipeId);
+  const instEl = document.getElementById('inst-text-' + recipeId);
+  const titleEl = document.getElementById('modal-title-' + recipeId);
+  const badge = document.getElementById('trans-badge-' + recipeId);
 
+  if (!langSelect || !instEl || !btn) return;
+
+  const lang = langSelect.value;
+  const langName = langSelect.options[langSelect.selectedIndex].text;
+
+  // Restore original English text
   if (lang === 'en') {
-    if (_origInst) instEl.textContent = _origInst;
-    if (_origTitle && titleEl) titleEl.textContent = _origTitle;
-    document.getElementById('trans-badge-'+recipeId).style.display = 'none';
+    const original = originalRecipeText.get(id);
+
+    if (original) {
+      instEl.textContent = original.instructions;
+      if (titleEl) titleEl.textContent = original.title;
+    }
+
+    if (badge) badge.style.display = 'none';
     return;
   }
 
+  // Save the original text only once per recipe
+  if (!originalRecipeText.has(id)) {
+    originalRecipeText.set(id, {
+      instructions: instEl.textContent,
+      title: titleEl ? titleEl.textContent : ''
+    });
+  }
+
+  const original = originalRecipeText.get(id);
+
   btn.disabled = true;
-  btn.innerHTML = '<span class="spin">⏳</span> Translating...';
-  _origInst = _origInst || instEl.textContent;
-  _origTitle = _origTitle || (titleEl ? titleEl.textContent : '');
+  btn.textContent = '⏳ Translating...';
 
   try {
-    const text = _origInst.substring(0, 1000);
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${lang}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.responseStatus === 200) {
-      instEl.textContent = data.responseData.translatedText;
-      const badge = document.getElementById('trans-badge-'+recipeId);
-      if (badge) { badge.textContent = `Translated to ${langName}`; badge.style.display = 'inline'; }
-    } else {
-      toast('Translation failed. Try again later.', 'terr');
+    async function translateText(text) {
+      if (!text || !text.trim()) return text;
+
+      const url =
+        'https://api.mymemory.translated.net/get?q=' +
+        encodeURIComponent(text.substring(0, 450)) +
+        '&langpair=en|' + encodeURIComponent(lang);
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Translation request failed: ' + response.status);
+      }
+
+      const result = await response.json();
+
+      if (
+        result.responseStatus !== 200 ||
+        !result.responseData ||
+        !result.responseData.translatedText
+      ) {
+        throw new Error(result.responseDetails || 'No translation returned');
+      }
+
+      return result.responseData.translatedText;
     }
-  } catch(e) {
-    toast('Translation service unavailable', 'terr');
+
+    const [translatedTitle, translatedInstructions] = await Promise.all([
+      translateText(original.title),
+      translateText(original.instructions)
+    ]);
+
+    // Update the actual recipe shown on screen
+    if (titleEl) titleEl.textContent = translatedTitle;
+    instEl.textContent = translatedInstructions;
+
+    if (badge) {
+      badge.textContent = 'Translated to ' + langName;
+      badge.style.display = 'inline-block';
+    }
+
+    toast('Recipe translated to ' + langName, 'success');
+
+  } catch (error) {
+    console.error('Cooknest translation error:', error);
+    toast('Translation failed. Please try again.', 'terr');
+
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>🌐</span> Translate';
   }
-  btn.disabled = false;
-  btn.innerHTML = '<span>🌐</span> Translate';
 }
+
 
 function restoreOriginal(recipeId) {
-  const instEl = document.getElementById('inst-text-'+recipeId);
-  const titleEl = document.getElementById('modal-title-'+recipeId);
-  if (instEl && _origInst) instEl.textContent = _origInst;
-  if (titleEl && _origTitle) titleEl.textContent = _origTitle;
-  document.getElementById('trans-badge-'+recipeId).style.display = 'none';
-  document.getElementById('trans-lang-'+recipeId).value = 'en';
-}
+  const original = originalRecipeText.get(String(recipeId));
+  const instEl = document.getElementById('inst-text-' + recipeId);
+  const titleEl = document.getElementById('modal-title-' + recipeId);
+  const badge = document.getElementById('trans-badge-' + recipeId);
+  const langSelect = document.getElementById('trans-lang-' + recipeId);
 
+  if (original && instEl) instEl.textContent = original.instructions;
+  if (original && titleEl) titleEl.textContent = original.title;
+  if (badge) badge.style.display = 'none';
+  if (langSelect) langSelect.value = 'en';
+}
 
 /* ── GOOGLE SIGN IN ── */
 window.onGoogleLibraryLoad = () => {

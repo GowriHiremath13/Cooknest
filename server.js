@@ -1,20 +1,70 @@
 require('dotenv').config();
 const express = require('express');
-const mysql = require('mysql2/promise');
+const path = require('path');
+
+const { Pool } = require('pg');
 const cors = require('cors');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
+// Serve the Cooknest website
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
+const pool = new Pool({
+  host: process.env.PGHOST || 'localhost',
+  port: Number(process.env.PGPORT || 5432),
+  user: process.env.PGUSER || 'postgres',
+  password: process.env.PGPASSWORD,
+  database: process.env.PGDATABASE || 'cooknest',
+});
+
+// Small compatibility layer: preserves the existing route structure while adapting
+// MySQL-style placeholders/results to PostgreSQL.
+function translateSql(input) {
+  let sql = input
+    .replace(/\bCURDATE\(\)/gi, 'CURRENT_DATE')
+    .replace(/DAYOFYEAR\(CURRENT_DATE\)/gi, 'EXTRACT(DOY FROM CURRENT_DATE)')
+    .replace(/DATE_SUB\(CURRENT_DATE,\s*INTERVAL 7 DAY\)/gi, "CURRENT_DATE - INTERVAL '7 days'")
+    .replace(/GROUP_CONCAT\(DISTINCT i\.name ORDER BY i\.name SEPARATOR ', '\)/gi,
+      "STRING_AGG(DISTINCT i.name, ', ' ORDER BY i.name)")
+    .replace(/GROUP_CONCAT\(\s*DISTINCT CASE WHEN NOT \((.*?)\) THEN i\.name END\s*ORDER BY i\.name SEPARATOR ', '\s*\)/gis,
+      "STRING_AGG(DISTINCT CASE WHEN NOT ($1) THEN i.name END, ', ' ORDER BY i.name)")
+    .replace(/\bDATE\(r\.created_at\)/gi, 'r.created_at::date')
+    .replace(/\bname LIKE \?/gi, 'name ILIKE ?');
+  // PostgreSQL parameters are numbered, unlike MySQL's question marks.
+  let n = 0;
+  sql = sql.replace(/\?/g, () => `$${++n}`);
+  return sql;
+}
+
+async function queryOn(client, rawSql, params = []) {
+  let sql = translateSql(rawSql);
+  const trimmed = sql.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('insert into recipes ') && !/returning\s+recipe_id/i.test(sql)) sql += ' RETURNING recipe_id';
+  if (lower.startsWith('insert into users ') && !/returning\s+user_id/i.test(sql)) sql += ' RETURNING user_id';
+  const result = await client.query(sql, params);
+  if (lower.startsWith('insert into recipes ')) return [{ insertId: result.rows[0]?.recipe_id }, result];
+  if (lower.startsWith('insert into users ')) return [{ insertId: result.rows[0]?.user_id }, result];
+  return [result.rows, result];
+}
+
+const db = {
+  query: (sql, params = []) => queryOn(pool, sql, params),
+  getConnection: async () => {
+    const client = await pool.connect();
+    return {
+      query: (sql, params = []) => queryOn(client, sql, params),
+      beginTransaction: () => client.query('BEGIN'),
+      commit: () => client.query('COMMIT'),
+      rollback: () => client.query('ROLLBACK'),
+      release: () => client.release(),
+    };
+  },
+};
 
 // 1. GET ALL RECIPES
 app.get('/api/recipes', async (req, res) => {
@@ -36,7 +86,8 @@ app.get('/api/recipes', async (req, res) => {
     if (difficulty) { query += ` AND r.difficulty = ?`;      params.push(difficulty); }
     if (max_time)   { query += ` AND r.cook_time_mins <= ?`; params.push(max_time); }
     if (req.query.language) { query += ` AND r.language = ?`; params.push(req.query.language); }
-    query += ` GROUP BY r.recipe_id ORDER BY avg_rating DESC, r.created_at DESC`;
+    query += ` GROUP BY r.recipe_id, c.name, u.username
+ORDER BY avg_rating DESC, r.created_at DESC`;
     const [rows] = await db.query(query, params);
     res.json({ success: true, count: rows.length, data: rows });
   } catch (err) {
@@ -113,7 +164,7 @@ app.get('/api/search', async (req, res) => {
     for (const term of list) {
       await db.query(
         `INSERT INTO SearchLog (search_term) VALUES (?)
-         ON DUPLICATE KEY UPDATE search_count = search_count + 1, last_searched = NOW()`,
+         ON CONFLICT (search_term) DO UPDATE SET search_count = SearchLog.search_count + 1, last_searched = CURRENT_TIMESTAMP`,
         [term]
       );
     }
@@ -169,9 +220,9 @@ app.get('/api/almost', async (req, res) => {
       LEFT JOIN Ratings rt ON r.recipe_id = rt.recipe_id
       WHERE r.status = 'approved'
       GROUP BY r.recipe_id
-      HAVING missing_count BETWEEN 1 AND ?
+      HAVING (COUNT(DISTINCT ri.ingredient_id) - COUNT(DISTINCT CASE WHEN (${likeConditions}) THEN i.ingredient_id END)) BETWEEN 1 AND ?
       ORDER BY missing_count ASC, have_count DESC, avg_rating DESC
-    `, [...likeParams, ...likeParams, ...likeParams, maxMissing]);
+    `, [...likeParams, ...likeParams, ...likeParams, ...likeParams, ...likeParams, maxMissing]);
 
     res.json({ success: true, count: rows.length, data: rows });
   } catch (err) {
@@ -179,58 +230,104 @@ app.get('/api/almost', async (req, res) => {
   }
 });
 
-// 5. TODAY'S RECIPES
+// Today's Recipes — PostgreSQL version
 app.get('/api/today', async (req, res) => {
   try {
-    const [rows] = await db.query(`
-      SELECT r.recipe_id, r.title, r.cuisine, r.cook_time_mins, r.difficulty, r.image_url,
-             c.name AS category, u.username AS submitted_by, r.created_at,
-             ROUND(AVG(rt.score), 1) AS avg_rating,
-             COUNT(DISTINCT rt.rating_id) AS total_ratings
-      FROM Recipes r
-      LEFT JOIN Categories c ON r.category_id = c.category_id
-      LEFT JOIN Users u ON r.submitted_by = u.user_id
-      LEFT JOIN Ratings rt ON r.recipe_id = rt.recipe_id
-      WHERE r.status = 'approved' AND DATE(r.created_at) = CURDATE()
-      GROUP BY r.recipe_id ORDER BY r.created_at DESC
+    const todayResult = await pool.query(`
+      SELECT
+        r.recipe_id,
+        r.title,
+        r.cuisine,
+        r.cook_time_mins,
+        r.difficulty,
+        r.image_url,
+        c.name AS category,
+        u.username AS submitted_by,
+        r.created_at,
+        ROUND(AVG(rt.score), 1) AS avg_rating,
+        COUNT(DISTINCT rt.rating_id) AS total_ratings
+      FROM recipes r
+      LEFT JOIN categories c ON r.category_id = c.category_id
+      LEFT JOIN users u ON r.submitted_by = u.user_id
+      LEFT JOIN ratings rt ON r.recipe_id = rt.recipe_id
+      WHERE r.status = 'approved'
+        AND r.created_at::date = CURRENT_DATE
+      GROUP BY r.recipe_id, c.name, u.username
+      ORDER BY r.created_at DESC
     `);
 
-    const [special] = await db.query(`
-      SELECT r.recipe_id, r.title, r.cuisine, r.cook_time_mins, r.difficulty, r.image_url,
-             c.name AS category, u.username AS submitted_by,
-             ROUND(AVG(rt.score), 1) AS avg_rating,
-             COUNT(DISTINCT rt.rating_id) AS total_ratings
-      FROM Recipes r
-      LEFT JOIN Categories c ON r.category_id = c.category_id
-      LEFT JOIN Users u ON r.submitted_by = u.user_id
-      LEFT JOIN Ratings rt ON r.recipe_id = rt.recipe_id
+    let recipes = todayResult.rows;
+    let period = 'today';
+    let label = "Today's Recipes";
+
+    // If no recipes were created today, show recent recipes instead.
+    if (recipes.length === 0) {
+      const recentResult = await pool.query(`
+        SELECT
+          r.recipe_id,
+          r.title,
+          r.cuisine,
+          r.cook_time_mins,
+          r.difficulty,
+          r.image_url,
+          c.name AS category,
+          u.username AS submitted_by,
+          r.created_at,
+          ROUND(AVG(rt.score), 1) AS avg_rating,
+          COUNT(DISTINCT rt.rating_id) AS total_ratings
+        FROM recipes r
+        LEFT JOIN categories c ON r.category_id = c.category_id
+        LEFT JOIN users u ON r.submitted_by = u.user_id
+        LEFT JOIN ratings rt ON r.recipe_id = rt.recipe_id
+        WHERE r.status = 'approved'
+          AND r.created_at >= CURRENT_DATE - INTERVAL '7 days'
+        GROUP BY r.recipe_id, c.name, u.username
+        ORDER BY r.created_at DESC
+        LIMIT 20
+      `);
+
+      recipes = recentResult.rows;
+      period = 'this_week';
+      label = "Recent Recipes";
+    }
+
+    const specialResult = await pool.query(`
+      SELECT
+        r.recipe_id,
+        r.title,
+        r.cuisine,
+        r.cook_time_mins,
+        r.difficulty,
+        r.image_url,
+        c.name AS category,
+        u.username AS submitted_by,
+        ROUND(AVG(rt.score), 1) AS avg_rating,
+        COUNT(DISTINCT rt.rating_id) AS total_ratings
+      FROM recipes r
+      LEFT JOIN categories c ON r.category_id = c.category_id
+      LEFT JOIN users u ON r.submitted_by = u.user_id
+      LEFT JOIN ratings rt ON r.recipe_id = rt.recipe_id
       WHERE r.status = 'approved'
-      GROUP BY r.recipe_id
-      ORDER BY (r.recipe_id * DAYOFYEAR(CURDATE())) % 1000
+      GROUP BY r.recipe_id, c.name, u.username
+      ORDER BY
+        (r.recipe_id * EXTRACT(DOY FROM CURRENT_DATE)::int) % 1000
       LIMIT 1
     `);
 
-    if (!rows.length) {
-      const [weekRows] = await db.query(`
-        SELECT r.recipe_id, r.title, r.cuisine, r.cook_time_mins, r.difficulty, r.image_url,
-               c.name AS category, u.username AS submitted_by, r.created_at,
-               ROUND(AVG(rt.score), 1) AS avg_rating,
-               COUNT(DISTINCT rt.rating_id) AS total_ratings
-        FROM Recipes r
-        LEFT JOIN Categories c ON r.category_id = c.category_id
-        LEFT JOIN Users u ON r.submitted_by = u.user_id
-        LEFT JOIN Ratings rt ON r.recipe_id = rt.recipe_id
-        WHERE r.status = 'approved'
-          AND r.created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-        GROUP BY r.recipe_id ORDER BY r.created_at DESC LIMIT 20
-      `);
-      return res.json({ success: true, count: weekRows.length, period: 'this_week',
-        label: "This Week's Recipes", special: special[0] || null, data: weekRows });
-    }
-    res.json({ success: true, count: rows.length, period: 'today',
-      label: "Today's Recipes", special: special[0] || null, data: rows });
+    res.json({
+      success: true,
+      count: recipes.length,
+      period,
+      label,
+      special: specialResult.rows[0] || null,
+      data: recipes
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error('Today dashboard error:', err);
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
   }
 });
 
@@ -283,7 +380,7 @@ app.post('/api/recipes/:id/rate', async (req, res) => {
     if (score < 1 || score > 5) return res.status(400).json({ success: false, message: 'Score must be 1-5' });
     await db.query(`
       INSERT INTO Ratings (user_id, recipe_id, score, comment) VALUES (?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE score = VALUES(score), comment = VALUES(comment)
+      ON CONFLICT (user_id, recipe_id) DO UPDATE SET score = EXCLUDED.score, comment = EXCLUDED.comment
     `, [user_id, id, score, comment]);
     res.json({ success: true, message: 'Rating submitted!' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -302,7 +399,7 @@ app.post('/api/recipes', async (req, res) => {
     `, [title, instructions, cuisine, cook_time_mins, difficulty, category_id, submitted_by, image_url||null]);
     const recipe_id = result.insertId;
     for (const ing of ingredients) {
-      await conn.query(`INSERT IGNORE INTO Ingredients (name, unit) VALUES (?, ?)`, [ing.name.toLowerCase(), ing.unit]);
+      await conn.query(`INSERT INTO Ingredients (name, unit) VALUES (?, ?) ON CONFLICT (name) DO NOTHING`, [ing.name.toLowerCase(), ing.unit]);
       const [[ingRow]] = await conn.query(`SELECT ingredient_id FROM Ingredients WHERE name = ?`, [ing.name.toLowerCase()]);
       await conn.query(`INSERT INTO Recipe_Ingredients (recipe_id, ingredient_id, quantity) VALUES (?, ?, ?)`,
         [recipe_id, ingRow.ingredient_id, ing.quantity]);
@@ -349,7 +446,7 @@ app.get('/api/top', async (req, res) => {
              ROUND(AVG(rt.score),1) AS avg_rating, COUNT(rt.rating_id) AS total_ratings
       FROM Recipes r JOIN Ratings rt ON r.recipe_id = rt.recipe_id
       WHERE r.status = 'approved'
-      GROUP BY r.recipe_id HAVING total_ratings > 0
+      GROUP BY r.recipe_id HAVING COUNT(rt.rating_id) > 0
       ORDER BY avg_rating DESC, total_ratings DESC LIMIT ?
     `, [limit]);
     res.json({ success: true, data: rows });
@@ -370,7 +467,7 @@ app.post('/api/users/register', async (req, res) => {
     const user = { user_id: result.insertId, username, email: email||null, phone: phone||null };
     res.status(201).json({ success: true, message: 'Account created!', user });
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY')
+    if (err.code === '23505')
       return res.status(400).json({ success: false, message: 'Email or phone already registered' });
     res.status(500).json({ success: false, message: err.message });
   }
@@ -417,27 +514,12 @@ app.get('/api/users/:id/profile', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// 16. BOOKMARKS
-(async () => {
-  try {
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS Bookmarks (
-        bookmark_id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id     INT NOT NULL,
-        recipe_id   INT NOT NULL,
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_bookmark (user_id, recipe_id),
-        FOREIGN KEY (user_id)   REFERENCES Users(user_id)   ON DELETE CASCADE,
-        FOREIGN KEY (recipe_id) REFERENCES Recipes(recipe_id) ON DELETE CASCADE
-      )
-    `);
-  } catch(e) {}
-})();
+// 16. BOOKMARKS (table created by schema.sql)
 
 app.post('/api/bookmarks', async (req, res) => {
   try {
     const { user_id, recipe_id } = req.body;
-    await db.query(`INSERT IGNORE INTO Bookmarks (user_id, recipe_id) VALUES (?, ?)`, [user_id, recipe_id]);
+    await db.query(`INSERT INTO Bookmarks (user_id, recipe_id) VALUES (?, ?) ON CONFLICT (user_id, recipe_id) DO NOTHING`, [user_id, recipe_id]);
     res.json({ success: true, message: 'Bookmarked!' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -470,4 +552,5 @@ app.get('/api/bookmarks/:user_id', async (req, res) => {
 
 // START SERVER
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Cooking DB API running at http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Cooknest PostgreSQL API running at http://localhost:${PORT}`));
+process.on('SIGINT', async () => { await pool.end(); process.exit(0); });

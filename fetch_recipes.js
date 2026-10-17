@@ -204,6 +204,13 @@ async function main() {
 
   const sql = lines.join('\n');
   fs.writeFileSync('bulk_recipes.sql', sql, 'utf8');
+  fs.writeFileSync(
+  'themealdb_recipes.json',
+  JSON.stringify(allMeals, null, 2),
+  'utf8'
+);
+
+console.log('Raw meal data saved to themealdb_recipes.json');
   console.log(`\nDone! bulk_recipes.sql written (${(sql.length/1024).toFixed(1)} KB)`);
   console.log(`Recipes: ${recipeRows.length} | Ingredients: ${ingInserts.length}`);
 }
