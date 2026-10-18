@@ -67,33 +67,76 @@ const db = {
 };
 
 // 1. GET ALL RECIPES
+
 app.get('/api/recipes', async (req, res) => {
   try {
-    const { cuisine, difficulty, max_time } = req.query;
+    const { cuisine, difficulty, max_time, language } = req.query;
+
     let query = `
-      SELECT r.recipe_id, r.title, r.cuisine, r.cook_time_mins, r.difficulty,
-             r.image_url, c.name AS category, u.username AS submitted_by,
-             ROUND(AVG(rt.score), 1) AS avg_rating,
-             COUNT(DISTINCT rt.rating_id) AS total_ratings
-      FROM Recipes r
-      LEFT JOIN Categories c ON r.category_id = c.category_id
-      LEFT JOIN Users u ON r.submitted_by = u.user_id
-      LEFT JOIN Ratings rt ON r.recipe_id = rt.recipe_id
+      SELECT
+        r.recipe_id,
+        r.title,
+        r.cuisine,
+        r.cook_time_mins,
+        r.difficulty,
+        r.image_url,
+        c.name AS category,
+        u.username AS submitted_by,
+        ROUND(AVG(rt.score)::numeric, 1) AS avg_rating,
+        COUNT(DISTINCT rt.rating_id) AS total_ratings
+      FROM public.recipes r
+      LEFT JOIN public.categories c
+        ON r.category_id = c.category_id
+      LEFT JOIN public.users u
+        ON r.submitted_by = u.user_id
+      LEFT JOIN public.ratings rt
+        ON r.recipe_id = rt.recipe_id
       WHERE r.status = 'approved'
     `;
+
     const params = [];
-    if (cuisine)    { query += ` AND r.cuisine = ?`;         params.push(cuisine); }
-    if (difficulty) { query += ` AND r.difficulty = ?`;      params.push(difficulty); }
-    if (max_time)   { query += ` AND r.cook_time_mins <= ?`; params.push(max_time); }
-    if (req.query.language) { query += ` AND r.language = ?`; params.push(req.query.language); }
-    query += ` GROUP BY r.recipe_id, c.name, u.username
-ORDER BY avg_rating DESC, r.created_at DESC`;
-    const [rows] = await db.query(query, params);
-    res.json({ success: true, count: rows.length, data: rows });
+
+    if (cuisine) {
+      params.push(cuisine);
+      query += ` AND r.cuisine = $${params.length}`;
+    }
+
+    if (difficulty) {
+      params.push(difficulty);
+      query += ` AND r.difficulty = $${params.length}`;
+    }
+
+    if (max_time) {
+      params.push(Number(max_time));
+      query += ` AND r.cook_time_mins <= $${params.length}`;
+    }
+
+    if (language) {
+      params.push(language);
+      query += ` AND r.language = $${params.length}`;
+    }
+
+    query += `
+      GROUP BY r.recipe_id, c.name, u.username
+      ORDER BY avg_rating DESC NULLS LAST, r.created_at DESC
+    `;
+
+    const result = await db.query(query, params);
+
+    res.json({
+      success: true,
+      count: result.rows.length,
+      data: result.rows
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error('GET /api/recipes failed:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch recipes'
+    });
   }
 });
+
 
 // 2. GET SINGLE RECIPE
 app.get('/api/recipes/:id', async (req, res) => {
