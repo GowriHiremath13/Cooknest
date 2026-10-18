@@ -19,6 +19,9 @@ const pool = new Pool({
   user: process.env.PGUSER || 'postgres',
   password: process.env.PGPASSWORD,
   database: process.env.PGDATABASE || 'cooknest',
+  ssl: {
+  rejectUnauthorized: false
+}
 });
 
 // Small compatibility layer: preserves the existing route structure while adapting
