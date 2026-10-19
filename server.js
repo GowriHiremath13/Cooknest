@@ -124,13 +124,13 @@ app.get('/api/recipes', async (req, res) => {
       ORDER BY avg_rating DESC NULLS LAST, r.created_at DESC
     `;
 
-    const result = await db.query(query, params);
+    const [rows] = await db.query(query, params);
 
-    res.json({
-      success: true,
-      count: result.rows.length,
-      data: result.rows
-    });
+res.json({
+  success: true,
+  count: rows.length,
+  data: rows
+});
   } catch (err) {
     console.error('GET /api/recipes failed:', err);
     res.status(500).json({
