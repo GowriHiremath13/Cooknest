@@ -14,13 +14,14 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 const pool = new Pool({
-  host: process.env.PGHOST || 'localhost',
+  host: process.env.PGHOST,
   port: Number(process.env.PGPORT || 5432),
-  user: process.env.PGUSER || 'postgres',
+  user: process.env.PGUSER,
   password: process.env.PGPASSWORD,
   database: process.env.PGDATABASE || 'cooknest',
-  ssl: { rejectUnauthorized: false },
-  options: '-c sslmode=require'
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 // Small compatibility layer: preserves the existing route structure while adapting
